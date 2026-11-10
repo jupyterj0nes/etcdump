@@ -1,0 +1,32 @@
+[package]
+name = "etcdump"
+version = "0.1.0"
+edition = "2021"
+description = "The configuration of every Linux root in an image or a triage package as text and as a CSV timeline: accounts, sudo, SSH, cron, systemd, shell profiles, preload, PAM, package sources and more, with deleted and previous versions, persistence rules and the c00pr 19-column format."
+authors = ["Tono Diaz (@jupyterj0nes)"]
+repository = "https://github.com/jupyterj0nes/etcdump"
+license = "AGPL-3.0-only"
+keywords = ["forensics", "dfir", "linux", "persistence", "timeline"]
+categories = ["command-line-utilities"]
+readme = "README.md"
+
+[dependencies]
+# The shared evidence reader; a path dependency until its first crates.io release.
+evidencefs = { path = "../evidencefs" }
+clap = { version = "4.5", features = ["derive", "wrap_help"] }
+chrono = "0.4"
+rayon = "1"
+indicatif = "0.17"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml_ng = "0.10"
+
+[dev-dependencies]
+zip = { version = "9", default-features = false, features = ["deflate"] }
+tar = "0.4"
+flate2 = "1"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 4

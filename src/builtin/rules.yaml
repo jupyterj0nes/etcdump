@@ -1,0 +1,410 @@
+# etcdump's built-in rules. Each rule looks at one configuration item: its area, its path
+# from the root, its key and its value (the decoded text the timeline shows in detail).
+#
+#   name       a stable id, LNX-...
+#   area       wildcard over the area (accounts, sudo, ssh, keys, cron, systemd...)
+#   path       wildcard over the root-relative path (* within a folder, ** across)
+#   not_path   wildcards; a path matching any of them is left out
+#   key        wildcard over the key (case-insensitive)
+#   not_key    wildcards; a key matching any of them is left out
+#   value      wildcard over the whole value (case-insensitive)
+#   data       any of these texts contained in the value (case-insensitive)
+#   and_data   and also any of these
+#   not_data   none of these may be contained in the value: the known benign cases
+#   severity   high, medium or low
+#   why        what it means, in words
+#   technique  the MITRE ATT&CK technique
+#
+# hunt_score is not chosen here: it is the rule's rarity measured on clean reference
+# evidence (src/builtin/rarity.tsv, `etcdump --measure`).
+
+- name: LNX-UID0-ACCOUNT
+  area: accounts
+  path: etc/passwd*
+  data: ["uid=0 "]
+  not_key: ["root"]
+  severity: high
+  why: "an account other than root has uid 0: a second root, the classic backdoor account"
+  technique: T1136.001
+
+- name: LNX-EMPTY-PASSWORD
+  area: accounts
+  path: etc/shadow*
+  data: ["password=empty"]
+  severity: high
+  why: "an account has an empty password field: anyone can log in as it where PAM allows nullok"
+  technique: T1098
+
+- name: LNX-SYSTEM-ACCOUNT-SHELL
+  area: accounts
+  path: etc/passwd*
+  data: ["system=yes interactive=yes"]
+  not_key: ["root", "sync"]
+  severity: medium
+  why: "a system account (uid 1-999) has an interactive shell: service accounts normally have nologin, an attacker gives one a shell to log in as it"
+  technique: T1078.003
+
+- name: LNX-ACCOUNT-SHELL-ODD-PLACE
+  area: accounts
+  path: etc/passwd*
+  data: ["shell=/tmp", "shell=/dev/shm", "shell=/var/tmp", "shell=/home"]
+  severity: high
+  why: "an account's login shell lives in a temporary or user-writable folder: logging in runs whatever was dropped there"
+  technique: T1546.004
+
+- name: LNX-PRIVILEGED-GROUP-MEMBER
+  area: accounts
+  path: etc/group*
+  data: ["privileged=yes"]
+  not_data: ["members= privileged"]
+  severity: low
+  why: "a group that can become root or read what root reads (sudo, wheel, docker, lxd, disk, shadow, adm) has members: who they are is worth a look"
+  technique: T1078.003
+
+- name: LNX-SUDO-NOPASSWD-ALL
+  area: sudo
+  data: ["NOPASSWD: ALL", "NOPASSWD:ALL"]
+  severity: medium
+  why: "a sudo rule lets someone run every command as root without a password"
+  technique: T1548.003
+
+- name: LNX-SUDO-SHELL-OR-EDITOR
+  area: sudo
+  data: ["/bin/sh", "/bin/bash", "/usr/bin/vi", "/usr/bin/vim", "/usr/bin/less", "/usr/bin/find", "/usr/bin/python", "/usr/bin/perl", "/usr/bin/awk", "/usr/bin/env"]
+  severity: medium
+  why: "a sudo rule grants a shell, an editor, a pager or an interpreter: each of them escapes to a root shell (GTFOBins)"
+  technique: T1548.003
+
+- name: LNX-SUDOERS-INCLUDE-ODD
+  area: sudo
+  key: "include*"
+  not_data: ["/etc/sudoers.d"]
+  severity: medium
+  why: "sudoers includes a file or folder outside /etc/sudoers.d: rules can be added where nobody looks"
+  technique: T1548.003
+
+- name: LNX-SUDO-NO-AUTHENTICATE
+  area: sudo
+  data: ["!authenticate"]
+  severity: high
+  why: "sudo is told not to ask for any password (Defaults !authenticate)"
+  technique: T1548.003
+
+- name: LNX-SSH-ROOT-LOGIN
+  area: ssh
+  key: "*PermitRootLogin"
+  value: "yes"
+  severity: medium
+  why: "sshd lets root log in with a password"
+  technique: T1021.004
+
+- name: LNX-SSH-EMPTY-PASSWORDS
+  area: ssh
+  key: "*PermitEmptyPasswords"
+  value: "yes"
+  severity: high
+  why: "sshd accepts accounts with empty passwords"
+  technique: T1021.004
+
+- name: LNX-SSH-PASSWORD-AUTH
+  area: ssh
+  path: "etc/ssh/sshd_config{,.d/*}"
+  key: "*PasswordAuthentication"
+  value: "yes"
+  severity: low
+  why: "sshd accepts passwords (cloud images ship with keys only): someone turned it on, maybe to brute-force or reuse a password"
+  technique: T1110
+
+- name: LNX-SSH-AUTHKEYS-FILE-ODD
+  area: ssh
+  key: "*AuthorizedKeysFile"
+  not_data: [".ssh/authorized_keys"]
+  severity: medium
+  why: "sshd reads authorized keys from an unusual file: a key can be planted where nobody checks"
+  technique: T1098.004
+
+- name: LNX-SSH-AUTHKEYS-COMMAND
+  area: ssh
+  key: "*AuthorizedKeysCommand"
+  not_data: ["/usr/bin/google_authorized_keys", "/usr/bin/sss_ssh_authorizedkeys"]
+  severity: medium
+  why: "sshd asks a program for the authorized keys: whoever controls the program decides who logs in"
+  technique: T1098.004
+
+- name: LNX-SSH-FORCECOMMAND-ODD
+  area: ssh
+  key: "*ForceCommand"
+  data: ["/tmp/", "/dev/shm/", "/var/tmp/", "curl", "wget"]
+  severity: high
+  why: "an SSH ForceCommand runs from a temporary folder or downloads something"
+  technique: T1546
+
+- name: LNX-AUTHKEY-COMMAND
+  area: keys
+  data: ["command="]
+  severity: medium
+  why: "an authorized key forces a command at login: a backdoor key often runs a payload this way"
+  technique: T1098.004
+
+- name: LNX-AUTHKEY-ROOT
+  area: keys
+  path: "root/.ssh/authorized_keys*"
+  severity: low
+  why: "root has an authorized SSH key: who can log in as root without a password"
+  technique: T1098.004
+
+- name: LNX-AUTHKEY-SERVICE-HOME
+  area: keys
+  path: "**/.ssh/authorized_keys*"
+  not_path: ["home/**", "root/**", "etc/ssh/**"]
+  severity: high
+  why: "a service account (a home outside /home and /root, such as /var/www) has an authorized SSH key"
+  technique: T1098.004
+
+- name: LNX-DOWNLOAD-AND-RUN
+  area: "{cron,at,systemd,init,shell,motd,logrotate,autostart,sources,udev}"
+  data: ["curl", "wget", "fetch ", "lwp-download"]
+  and_data: ["| sh", "|sh", "| bash", "|bash", "bash -c", "sh -c", "| python", "|python", "chmod +x", "-O /tmp", "-o /tmp"]
+  severity: high
+  why: "a scheduled, start-up or login command downloads something and runs it"
+  technique: T1105
+
+- name: LNX-RUNS-FROM-TEMP
+  area: "{cron,at,systemd,init,shell,motd,logrotate,autostart,udev}"
+  data: ["/tmp/", "/dev/shm/", "/var/tmp/"]
+  not_data: ["rm -rf /tmp/", "find /tmp", "PrivateTmp", "tmpfiles", "-d /tmp", "/tmp/.X11", "TMPDIR=/tmp/", "mountpoint -q", "umount ", "mount -t tmpfs"]
+  severity: high
+  why: "a scheduled, start-up or login command runs something from a temporary folder, where an attacker drops payloads"
+  technique: T1053.003
+
+- name: LNX-BASE64-DECODE
+  area: "{cron,at,systemd,init,shell,motd,logrotate,autostart,udev}"
+  data: ["base64 -d", "base64 --decode", "b64decode", "openssl enc -d"]
+  severity: high
+  why: "a scheduled, start-up or login command decodes base64: payloads are hidden this way"
+  technique: T1140
+
+- name: LNX-REVERSE-SHELL
+  area: "{cron,at,systemd,init,shell,motd,logrotate,autostart,udev,ssh,keys}"
+  data: ["/dev/tcp/", "/dev/udp/", "nc -e", "ncat -e", "nc -c", "socat exec", "socat tcp", "bash -i >&", "mkfifo", "telnet ", "0<&196"]
+  severity: high
+  why: "a command opens a shell over the network (bash /dev/tcp, nc -e, socat, mkfifo pipes)"
+  technique: T1059.004
+
+- name: LNX-SYSTEMD-EXEC-HOME
+  area: systemd
+  key: "Service.Exec*"
+  data: ["/home/", "/root/"]
+  severity: medium
+  why: "a systemd service runs a program from a home folder"
+  technique: T1543.002
+
+- name: LNX-SYSTEMD-USER-UNIT
+  area: systemd
+  path: "home/*/.config/systemd/user/**"
+  key: "Service.Exec*"
+  severity: medium
+  why: "a user has a systemd user service: it starts at every login of that user without root"
+  technique: T1543.002
+
+- name: LNX-SYSTEMD-GENERATOR
+  area: systemd
+  path: "etc/systemd/system-generators/*"
+  severity: medium
+  why: "a systemd generator in /etc runs at every boot before the units and can create any unit"
+  technique: T1543.002
+
+- name: LNX-RC-LOCAL
+  area: init
+  path: "etc/{rc.local,rc.d/rc.local}"
+  not_data: ["exit 0"]
+  not_key: ["#!"]
+  severity: medium
+  why: "rc.local runs commands as root at every boot; stock systems leave it empty or missing"
+  technique: T1037.004
+
+- name: LNX-LD-PRELOAD
+  area: preload
+  path: etc/ld.so.preload
+  severity: high
+  why: "ld.so.preload loads a library into every program: the classic userland rootkit hook"
+  technique: T1574.006
+
+- name: LNX-LDCONF-ODD-DIR
+  area: preload
+  path: "etc/ld.so.conf{,.d/*}"
+  data: ["/tmp", "/dev/shm", "/var/tmp", "/home"]
+  severity: medium
+  why: "the dynamic linker searches a temporary or user folder for libraries"
+  technique: T1574.006
+
+- name: LNX-ENV-PRELOAD
+  area: "{environment,pam}"
+  key: "{LD_PRELOAD,LD_AUDIT}"
+  severity: high
+  why: "an environment file sets LD_PRELOAD or LD_AUDIT for every login: a library is injected into programs"
+  technique: T1574.006
+
+- name: LNX-PROFILE-PRELOAD
+  area: "{shell,systemd,init,cron}"
+  data: ["LD_PRELOAD=", "LD_LIBRARY_PATH=/tmp", "LD_LIBRARY_PATH=/dev/shm", "LD_AUDIT="]
+  severity: high
+  why: "a profile, a unit or a start-up script sets LD_PRELOAD or LD_AUDIT: a library is injected into the programs it starts"
+  technique: T1574.006
+
+- name: LNX-PAM-EXEC
+  area: pam
+  data: ["module=pam_exec.so"]
+  severity: high
+  why: "PAM runs a program at authentication (pam_exec): it can log passwords or open a backdoor"
+  technique: T1556.003
+
+- name: LNX-PAM-PERMIT-SUFFICIENT
+  area: pam
+  data: ["control=sufficient module=pam_permit.so"]
+  severity: high
+  why: "pam_permit is sufficient for authentication: any password is accepted"
+  technique: T1556.003
+
+- name: LNX-PAM-ODD-MODULE
+  area: pam
+  data: ["module=/tmp", "module=/dev/shm", "module=/var/tmp", "module=/home", "module=/usr/local", "module=/opt"]
+  severity: high
+  why: "PAM loads a module from a non-system path: a backdoored pam_unix is installed this way"
+  technique: T1556.003
+
+- name: LNX-APT-HOOK
+  area: sources
+  path: "etc/apt/apt.conf{,.d/*}"
+  data: ["Pre-Invoke", "Post-Invoke", "Post-Invoke-Success", "Pre-Install-Pkgs"]
+  severity: medium
+  why: "APT runs a command before or after every update or install: persistence that fires when the admin patches"
+  technique: T1546
+
+- name: LNX-APT-TRUSTED
+  area: sources
+  data: ["trusted=yes", "Trusted=yes", "allow-insecure=yes", "AllowUnauthenticated"]
+  severity: medium
+  why: "a package source is trusted without signatures: anyone on the path can serve packages"
+  technique: T1195.002
+
+- name: LNX-APT-SOURCE-PLAIN-IP
+  area: sources
+  data: ["http://1", "http://2", "http://3", "http://4", "http://5", "http://6", "http://7", "http://8", "http://9"]
+  severity: low
+  why: "a package source is a bare IP address"
+  technique: T1195.002
+
+- name: LNX-YUM-GPGCHECK-OFF
+  area: sources
+  key: "*gpgcheck"
+  value: "0"
+  severity: medium
+  why: "a yum or dnf repository does not check package signatures"
+  technique: T1195.002
+
+- name: LNX-AUTOSTART-ENTRY
+  area: autostart
+  path: "home/**"
+  key: "*Exec"
+  severity: low
+  why: "a user has a desktop autostart entry: it runs at every graphical login"
+  technique: T1547.013
+
+- name: LNX-MOTD-NETWORK
+  area: motd
+  data: ["curl", "wget", "/dev/tcp", "nc "]
+  not_data: ["motd-news", "https://motd.ubuntu.com"]
+  severity: high
+  why: "a login message script reaches the network: update-motd scripts run as root at every SSH login"
+  technique: T1546
+
+- name: LNX-UDEV-RUN
+  area: udev
+  data: ["RUN+="]
+  severity: medium
+  why: "a udev rule in /etc runs a program when a device appears: persistence that fires at boot or on a USB event"
+  technique: T1546
+
+- name: LNX-MODULE-LOADED-AT-BOOT
+  area: modules
+  path: "etc/{modules,modules-load.d/*}"
+  severity: low
+  why: "a kernel module is loaded at boot by configuration: a rootkit module is kept this way"
+  technique: T1547.006
+
+- name: LNX-MODPROBE-INSTALL
+  area: modules
+  data: ["install "]
+  not_data: ["/bin/false", "/bin/true", "/sbin/modprobe --ignore-install"]
+  severity: medium
+  why: "modprobe runs a command instead of loading a module (install directive)"
+  technique: T1547.006
+
+- name: LNX-HOSTS-REDIRECT
+  area: network
+  path: etc/hosts
+  not_data: ["localhost", "ip6-", "metadata.google.internal", "ip6"]
+  not_key: ["127.0.1.1"]
+  severity: low
+  why: "the hosts file maps a name to an address: redirection of an update or security vendor, or a pinned C2"
+  technique: T1565.001
+
+- name: LNX-LOGROTATE-SCRIPT-NETWORK
+  area: logrotate
+  data: ["curl", "wget", "/dev/tcp", "nc "]
+  severity: medium
+  why: "a logrotate script reaches the network: it runs as root every day"
+  technique: T1053
+
+- name: LNX-SHELL-ALIAS-SUDO
+  area: shell
+  data: ["alias sudo=", "alias su=", "alias ssh=", "alias passwd="]
+  severity: medium
+  why: "a profile redefines sudo, su, ssh or passwd: the classic way to capture passwords as they are typed"
+  technique: T1546.004
+
+- name: LNX-SHELL-PROMPT-COMMAND
+  area: shell
+  data: ["PROMPT_COMMAND="]
+  not_data: ["history -a", "__vte_prompt_command", "_direnv_hook"]
+  severity: medium
+  why: "a profile sets PROMPT_COMMAND: it runs before every prompt, a keylogger or beacon hook"
+  technique: T1546.004
+
+- name: LNX-SHELL-HISTORY-OFF
+  area: shell
+  data: ["HISTFILE=/dev/null", "unset HISTFILE", "HISTSIZE=0", "set +o history"]
+  severity: medium
+  why: "a profile switches shell history off: someone did not want their commands kept"
+  technique: T1070.003
+
+- name: LNX-AT-JOB
+  area: at
+  severity: low
+  why: "an at job is waiting: one-off scheduled commands are rare on servers"
+  technique: T1053.002
+
+- name: LNX-USER-CRONTAB
+  area: cron
+  path: "var/spool/cron/**"
+  key: "*"
+  not_key: ["SHELL", "PATH", "MAILTO", "HOME"]
+  severity: low
+  why: "a user has a crontab: scheduled commands outside /etc"
+  technique: T1053.003
+
+- name: LNX-FIREWALL-OPENED
+  area: firewall
+  data: ["-P INPUT ACCEPT", "--dport 4444", "--dport 1337", "--dport 31337"]
+  severity: low
+  why: "a saved firewall rule accepts all input or a port that tools and backdoors favour"
+  technique: T1562.004
+
+- name: LNX-FSTAB-NOEXEC-REMOVED
+  area: mounts
+  key: "/tmp"
+  not_data: ["noexec"]
+  severity: low
+  why: "/tmp is mounted without noexec (where it has its own entry): payloads can run from it"
+  technique: T1562

@@ -1,0 +1,15 @@
+# rule	area	path	key	value — items of leo-lnx01, leo-lnx01 on which a rule fired
+LNX-APT-HOOK	sources	etc/apt/apt.conf.d/15update-stamp	APT::Update::Post-Invoke-Success	APT::Update::Post-Invoke-Success {"touch /var/lib/apt/periodic/update-success-stamp 2>/dev/null || true";};
+LNX-APT-HOOK	sources	etc/apt/apt.conf.d/20apt-esm-hook.conf	APT::Update::Pre-Invoke	APT::Update::Pre-Invoke {
+LNX-APT-HOOK	sources	etc/apt/apt.conf.d/20packagekit	APT::Update::Post-Invoke-Success	APT::Update::Post-Invoke-Success {
+LNX-APT-HOOK	sources	etc/apt/apt.conf.d/20packagekit	DPkg::Post-Invoke	DPkg::Post-Invoke {
+LNX-APT-HOOK	sources	etc/apt/apt.conf.d/50command-not-found	APT::Update::Post-Invoke-Success	APT::Update::Post-Invoke-Success {
+LNX-APT-HOOK	sources	etc/apt/apt.conf.d/70debconf	DPkg::Pre-Install-Pkgs	DPkg::Pre-Install-Pkgs {"/usr/sbin/dpkg-preconfigure --apt || true";};
+LNX-APT-HOOK	sources	etc/apt/apt.conf.d/99needrestart	DPkg::Post-Invoke	DPkg::Post-Invoke {"test -x /usr/lib/needrestart/apt-pinvoke && /usr/lib/needrestart/apt-pinvoke || true"; };
+LNX-APT-HOOK	sources	etc/apt/apt.conf.d/99update-notifier	APT::Update::Post-Invoke-Success	APT::Update::Post-Invoke-Success {"/usr/lib/update-notifier/update-motd-updates-available 2>/dev/null || true";};
+LNX-APT-HOOK	sources	etc/apt/apt.conf.d/99update-notifier	DPkg::Post-Invoke	DPkg::Post-Invoke {"if [ -d /var/lib/update-notifier ]; then touch /var/lib/update-notifier/dpkg-run-stamp; fi; /usr/lib/update-notifier/update-motd-updates-available 2>/dev/null || true";};
+LNX-PRIVILEGED-GROUP-MEMBER	accounts	etc/group	adm	gid=4 members=syslog,ubuntu,goadmin,c00pr privileged=yes
+LNX-PRIVILEGED-GROUP-MEMBER	accounts	etc/group	lxd	gid=119 members=ubuntu,goadmin,c00pr privileged=yes
+LNX-PRIVILEGED-GROUP-MEMBER	accounts	etc/group	sudo	gid=27 members=ubuntu privileged=yes
+LNX-SUDO-NOPASSWD-ALL	sudo	etc/sudoers.d/90-cloud-init-users	ubuntu	ALL=(ALL) NOPASSWD:ALL
+LNX-SUDO-NOPASSWD-ALL	sudo	etc/sudoers.d/google_sudoers	%google-sudoers	ALL=(ALL:ALL) NOPASSWD:ALL
