@@ -665,10 +665,12 @@ name = "evidencefs"
 version = "0.1.0"
 dependencies = [
  "blockcarve",
+ "bzip2",
  "ewf 0.4.10",
  "ext4-view",
  "flate2",
  "lvm2",
+ "lzma-rust2",
  "ntfs",
  "rust-fs-core",
  "rust-fs-xfs",
